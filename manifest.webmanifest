@@ -1,0 +1,21 @@
+{
+ "name": "Ashmoor Study Companion",
+ "short_name": "Ashmoor",
+ "start_url": "./",
+ "scope": "./",
+ "display": "standalone",
+ "background_color": "#161315",
+ "theme_color": "#161315",
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  }
+ ]
+}
