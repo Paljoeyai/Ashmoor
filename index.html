@@ -51,7 +51,31 @@ body {
 }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
 .wrap { max-width: 640px; margin: 0 auto; }
-button, textarea, input { font: inherit; color: inherit; }
+button, textarea, input, select { font: inherit; color: inherit; }
+select, input[type="date"] { width: 100%; min-height: 44px; margin-top: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+.chk { display: flex; gap: 10px; align-items: flex-start; min-height: 44px; margin-top: 10px; cursor: pointer; font-family: var(--ui); font-size: 14px; }
+.chk input { width: 22px; height: 22px; flex: none; margin: 0; accent-color: var(--accent); }
+
+/* day journal */
+.journal h2 { font-family: var(--display); font-size: 25px; line-height: 1.15; font-weight: 700; margin: 0; }
+.filebtn { display: inline-flex; align-items: center; position: relative; margin-top: 8px; overflow: hidden; }
+.filebtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vh { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 0; }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.thumbs:empty { display: none; }
+.th { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.thb { padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); cursor: pointer; aspect-ratio: 1; }
+.thb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rm { font-family: var(--ui); font-size: 12px; min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.rm[data-armed="1"] { color: var(--accent); border-color: var(--accent); }
+.lkrow { display: flex; gap: 8px; align-items: stretch; }
+.lkrow a { flex: 1; min-width: 0; }
+.linkadd { display: grid; gap: 8px; margin-top: 10px; }
+.linkadd input { width: 100%; min-height: 44px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+.lb { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .9); display: flex; align-items: center; justify-content: center;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+.lb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.lb button { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); }
 a { color: var(--accent); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -129,11 +153,9 @@ h3.sec { font-family: var(--display); font-size: 24px; margin: 26px 0 0; }
 (function () {
   var TERMS = JSON.parse(document.getElementById("data").textContent);
   var ALL = [];
-  TERMS.forEach(function (t, ti) { t.events.forEach(function (e) { e.term = ti; ALL.push(e); }); });
+  TERMS.forEach(function (t, ti) { t.events.forEach(function (e) { e.term = ti; e.d0 = e.date; ALL.push(e); }); });
   var DATES = [];
   var BYDATE = {};
-  ALL.forEach(function (e) { if (!BYDATE[e.date]) { BYDATE[e.date] = []; DATES.push(e.date); } BYDATE[e.date].push(e); });
-  DATES.sort();
 
   // ---- storage (localStorage when it works, memory otherwise)
   var KEY = "ashmoor-companion-v1", mem = null, saveT = null;
@@ -147,6 +169,24 @@ h3.sec { font-family: var(--display); font-size: 24px; margin: 26px 0 0; }
     clearTimeout(saveT);
     saveT = setTimeout(function () { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }, 300);
   }
+
+  // ---- schedule: every session keeps its original date (d0). S.off holds a day offset per term.
+  function addDays(s, n) { var d = pd(s); d.setDate(d.getDate() + n); return fmt(d); }
+  function build() {
+    BYDATE = {}; DATES = [];
+    var off = S.off || [];
+    ALL.forEach(function (e) {
+      e.date = addDays(e.d0, off[e.term] || 0);
+      if (!BYDATE[e.date]) { BYDATE[e.date] = []; DATES.push(e.date); }
+      BYDATE[e.date].push(e);
+    });
+    DATES.sort();
+    DATES.forEach(function (d) {
+      BYDATE[d].sort(function (a, b) { var x = a.start || "", y = b.start || ""; return x < y ? -1 : x > y ? 1 : 0; });
+    });
+  }
+  if (!S.links) S.links = {};
+  build();
 
   // ---- helpers
   var DAYN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -278,9 +318,11 @@ h3.sec { font-family: var(--display); font-size: 24px; margin: 26px 0 0; }
     var wk = ""; evs.forEach(function (e) { if (!wk) wk = weekInfo(e); });
     var i = DATES.indexOf(cur);
     var nav = '<div class="nav"><button data-go="-1" aria-label="Previous day"' + (i < 1 ? " disabled" : "") + '>&lsaquo;</button><button class="today" data-go="today">Today</button><button data-go="1" aria-label="Next day"' + (i >= DATES.length - 1 ? " disabled" : "") + ">&rsaquo;</button></div>";
-    var h = bar(long(cur), esc(tn) + (wk ? " &middot; " + wk : ""), nav);
+    var pre = fmt(new Date()) < DATES[0] ? " &middot; Program begins " + short(DATES[0]) : "";
+    var h = bar(long(cur), esc(tn) + (wk ? " &middot; " + wk : "") + pre, nav);
     evs.forEach(function (e) { if (e.start) h += sessionHTML(e); });
     evs.forEach(function (e) { if (!e.start) h += sessionHTML(e); });
+    h += journalHTML(evs);
     return h;
   }
   function doneCount(evs) { var n = 0, t = 0; evs.forEach(function (e) { if (e.start) { t++; if (S.done[e.id]) n++; } }); return [n, t]; }
@@ -298,8 +340,181 @@ h3.sec { font-family: var(--display); font-size: 24px; margin: 26px 0 0; }
     });
     return h + '<div class="list">' + (items || '<p class="empty">No sessions this week.</p>') + "</div>";
   }
+  // ---- day journal: thoughts (S.ans), links (S.links), images (IndexedDB). Keyed by term + original date so they follow a restart.
+  var DB = null, dbReady = false, memImgs = [], urls = {};
+  function openDB() {
+    function ready() { dbReady = true; if (view === "today") loadImages(); }
+    try {
+      var r = indexedDB.open("ashmoor-journal", 1);
+      r.onupgradeneeded = function () { var s = r.result.createObjectStore("img", { keyPath: "id" }); s.createIndex("day", "day"); };
+      r.onsuccess = function () { DB = r.result; ready(); };
+      r.onerror = function () { ready(); };
+      r.onblocked = function () { ready(); };
+    } catch (e) { ready(); }
+  }
+  function imgAll(day, cb) {
+    if (!DB) { cb(memImgs.filter(function (r) { return r.day === day; })); return; }
+    try {
+      var q = DB.transaction("img", "readonly").objectStore("img").index("day").getAll(day);
+      q.onsuccess = function () { cb(q.result || []); };
+      q.onerror = function () { cb([]); };
+    } catch (e) { cb([]); }
+  }
+  function imgPut(rec, cb) {
+    if (!DB) { memImgs.push(rec); cb(true); return; }
+    try {
+      var tx = DB.transaction("img", "readwrite"); tx.objectStore("img").put(rec);
+      tx.oncomplete = function () { cb(true); }; tx.onerror = function () { cb(false); }; tx.onabort = function () { cb(false); };
+    } catch (e) { cb(false); }
+  }
+  function imgDelete(id, cb) {
+    if (!DB) { memImgs = memImgs.filter(function (r) { return r.id !== id; }); cb(); return; }
+    try { var tx = DB.transaction("img", "readwrite"); tx.objectStore("img").delete(id); tx.oncomplete = cb; tx.onerror = cb; } catch (e) { cb(); }
+  }
+  function shrink(file, cb) {
+    var url = URL.createObjectURL(file), im = new Image();
+    im.onload = function () {
+      var w = im.naturalWidth, h = im.naturalHeight, k = Math.min(1, 1600 / Math.max(w, h));
+      var c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+      var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(function (b) { cb(b); }, "image/jpeg", 0.82);
+    };
+    im.onerror = function () { URL.revokeObjectURL(url); cb(null); };
+    im.src = url;
+  }
+  function loadImages() {
+    var box = document.getElementById("thumbs"); if (!box || !dbReady) return;
+    var dk = box.dataset.dk;
+    imgAll(dk, function (recs) {
+      var b2 = document.getElementById("thumbs"); if (!b2 || b2.dataset.dk !== dk) return;
+      recs.sort(function (a, b) { return a.ts - b.ts; });
+      b2.innerHTML = recs.map(function (r) {
+        if (!urls[r.id]) urls[r.id] = URL.createObjectURL(r.blob);
+        return '<div class="th"><button class="thb" data-act="viewimg" data-id="' + r.id + '" aria-label="View image"><img src="' + urls[r.id] + '" alt="Saved image"></button><button class="rm" data-act="rmimg" data-id="' + r.id + '">Remove</button></div>';
+      }).join("");
+      var em = document.getElementById("thumbs-empty"); if (em) em.hidden = recs.length > 0;
+    });
+  }
+  function handleFiles(files, dk) {
+    var list = Array.prototype.slice.call(files || []); if (!list.length) return;
+    var msg = document.getElementById("img-msg"), n = 0, bad = 0;
+    function next() {
+      if (!list.length) { if (msg) msg.textContent = bad ? bad + (bad > 1 ? " images" : " image") + " could not be saved. Try a JPEG or PNG." : ""; loadImages(); return; }
+      var f = list.shift();
+      if (msg) msg.textContent = "Saving image " + (n + bad + 1) + "...";
+      shrink(f, function (blob) {
+        if (!blob) { bad++; next(); return; }
+        imgPut({ id: "i" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), day: dk, ts: Date.now(), name: f.name || "", blob: blob }, function (ok) { if (ok) n++; else bad++; next(); });
+      });
+    }
+    next();
+  }
+  function removeImage(id) { imgDelete(id, function () { if (urls[id]) { URL.revokeObjectURL(urls[id]); delete urls[id]; } loadImages(); }); }
+  function openLightbox(id) {
+    if (!urls[id]) return; closeLightbox();
+    var d = document.createElement("div"); d.className = "lb"; d.id = "lb"; d.setAttribute("data-act", "lbclose"); d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "Image");
+    d.innerHTML = '<img src="' + urls[id] + '" alt="Saved image"><button class="btn" data-act="lbclose">Close</button>';
+    document.body.appendChild(d); d.querySelector("button").focus();
+  }
+  function closeLightbox() { var d = document.getElementById("lb"); if (d) d.remove(); }
+  function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return u; } }
+  function normUrl(s) {
+    s = (s || "").trim(); if (!s) return null;
+    if (!/^[a-z][a-z0-9+.\-]*:/i.test(s)) s = "https://" + s;
+    try { var u = new URL(s); return (u.protocol === "http:" || u.protocol === "https:") && u.hostname.indexOf(".") > 0 ? u.href : null; } catch (e) { return null; }
+  }
+  function linkItems(dk) {
+    var L = S.links[dk] || [];
+    if (!L.length) return '<li class="note">No links yet.</li>';
+    return L.map(function (x, i) {
+      var vid = /(youtube\.com|youtu\.be|vimeo\.com|tiktok\.com|twitch\.tv)/i.test(hostOf(x.u));
+      return '<li class="lkrow"><a href="' + esc(x.u) + '" target="_blank" rel="noopener">' + esc(x.t || hostOf(x.u)) + "<span>" + (vid ? "Video &middot; " : "") + esc(hostOf(x.u)) + '</span></a><button class="rm" data-act="rmlink" data-dk="' + dk + '" data-i="' + i + '">Remove</button></li>';
+    }).join("");
+  }
+  function refreshLinks(dk, msg) {
+    document.getElementById("jl").innerHTML = linkItems(dk);
+    document.getElementById("lk-msg").textContent = msg || "";
+    if (!msg) { document.getElementById("lk-url").value = ""; document.getElementById("lk-title").value = ""; }
+  }
+  function addLink(dk) {
+    var u = normUrl(document.getElementById("lk-url").value), t = document.getElementById("lk-title").value.trim();
+    if (!u) { document.getElementById("lk-msg").textContent = "That does not look like a web link. Paste the full address."; return; }
+    var L = S.links[dk] || (S.links[dk] = []);
+    if (L.some(function (x) { return x.u === u; })) { document.getElementById("lk-msg").textContent = "That link is already saved."; return; }
+    L.push({ u: u, t: t.slice(0, 80) }); persist(); refreshLinks(dk);
+  }
+  function removeLink(dk, i) { var L = S.links[dk] || []; L.splice(i, 1); if (!L.length) delete S.links[dk]; persist(); refreshLinks(dk); }
+  function dayKeyOf(evs) { return evs[0].term + "-" + evs[0].d0; }
+  function dayLabel(dk) { var i = dk.indexOf("-"), ti = +dk.slice(0, i); return long(addDays(dk.slice(i + 1), (S.off || [])[ti] || 0)); }
+  function journalHTML(evs) {
+    var dk = dayKeyOf(evs);
+    var h = '<section class="card journal"><h2>Day journal</h2><p class="note" style="margin:4px 0 0">' + esc(long(cur)) + ". Saved on this device.</p>";
+    h += '<div class="lab">Thoughts</div><textarea id="j-' + dk + '" data-ans="J|' + dk + '|note" placeholder="What stood out today? What do you doubt? What do you want to ask next?">' + esc(S.ans["J|" + dk + "|note"] || "") + "</textarea>";
+    h += '<div class="lab">Images</div><div class="thumbs" id="thumbs" data-dk="' + dk + '"></div><p class="note" id="thumbs-empty">No images yet. Add a photo of your notes, a page, or a place you visited.</p>';
+    h += '<label class="btn ghost filebtn"><span>Add images</span><input class="vh" type="file" id="img-pick" accept="image/*" multiple data-dk="' + dk + '"></label><p class="note" id="img-msg" role="status"></p>';
+    h += '<div class="lab">Links</div><ul class="links" id="jl">' + linkItems(dk) + "</ul>";
+    h += '<div class="linkadd"><input type="url" id="lk-url" data-dk="' + dk + '" placeholder="Paste a video or article link" inputmode="url" autocapitalize="none" autocorrect="off" aria-label="Link address"><input type="text" id="lk-title" data-dk="' + dk + '" placeholder="Short label (optional)" aria-label="Link label"><button class="btn" data-act="addlink" data-dk="' + dk + '">Add link</button></div><p class="note" id="lk-msg" role="status"></p></section>';
+    return h;
+  }
+
+  var flash = "";
+  function tname(ti) { return TERMS[ti].name.replace("Ashmoor Collegium - ", ""); }
+  function tstart(ti) { return TERMS[ti].events[0].date; }
+  function tend(ti) { var ev = TERMS[ti].events; return ev[ev.length - 1].date; }
+  function longY(s) { var d = pd(s); return DAYN[d.getDay()] + ", " + MON[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear(); }
+  function mondayOnOrAfter(s) { var d = pd(s); d.setDate(d.getDate() + ((8 - d.getDay()) % 7)); return fmt(d); }
+  function diffDays(a, b) { return Math.round((pd(b) - pd(a)) / 86400000); }
+  function validDate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); }
+  function curTermIdx() { var evs = BYDATE[cur]; return evs && evs.length ? evs[0].term : 0; }
+  function previewText(ti, ds) {
+    if (!validDate(ds)) return "Pick a start date.";
+    var mon = mondayOnOrAfter(ds), shift = diffDays(TERMS[ti].events[0].d0, mon);
+    var ev = TERMS[ti].events, end = addDays(ev[ev.length - 1].d0, shift);
+    var t = tname(ti) + " would begin " + longY(mon) + " and end " + longY(end) + ".";
+    if (mon !== ds) t += " Weeks run Monday to Sunday, so " + short(ds) + " moves to the next Monday.";
+    if (ti < TERMS.length - 1) {
+      var le = TERMS[TERMS.length - 1].events; t += " Later terms move with it. The program would finish " + longY(addDays(le[le.length - 1].d0, shift)) + ".";
+    }
+    if (ti > 0 && mon <= tend(ti - 1)) t += " This overlaps the end of " + tname(ti - 1) + ".";
+    return t;
+  }
+  function scheduleCard() {
+    var cti = curTermIdx(), sd = tstart(cti);
+    var opts = TERMS.map(function (t, i) { return '<option value="' + i + '"' + (i === cti ? " selected" : "") + ">" + esc(tname(i)) + "</option>"; }).join("");
+    var h = '<div class="card"><div class="lab" style="margin-top:0">Restart a term</div>';
+    h += '<p class="note">Choose a term and a new start date. That term and every later term move together. Your answers stay unless you choose to clear them.</p>';
+    h += '<label class="note" for="rs-term">Term</label><select id="rs-term">' + opts + "</select>";
+    h += '<label class="note" for="rs-date" style="display:block;margin-top:12px">Start date</label><input type="date" id="rs-date" value="' + sd + '">';
+    h += '<p class="note" id="rs-prev" style="margin:10px 0 0">' + esc(previewText(cti, sd)) + "</p>";
+    h += '<label class="chk"><input type="checkbox" id="rs-clear"><span>Also clear checkmarks and answers for this term</span></label>';
+    h += '<div class="btns"><button class="btn" id="rs-go" data-act="restart">Restart term</button><button class="btn ghost" data-act="reset">Back to original dates</button></div>';
+    h += '<p class="note" role="status" id="rs-msg">' + esc(flash) + "</p></div>";
+    return h;
+  }
+  function updPrev() {
+    var ti = +document.getElementById("rs-term").value, ds = document.getElementById("rs-date").value;
+    document.getElementById("rs-prev").textContent = previewText(ti, ds);
+    var b = document.getElementById("rs-go"); b.dataset.armed = ""; b.textContent = "Restart term";
+  }
+  function restartTerm(ti, ds, clr) {
+    var mon = mondayOnOrAfter(ds), shift = diffDays(TERMS[ti].events[0].d0, mon);
+    var off = S.off || []; while (off.length < TERMS.length) off.push(0);
+    for (var k = ti; k < TERMS.length; k++) off[k] = shift;
+    S.off = off;
+    if (clr) {
+      var ids = {}; TERMS[ti].events.forEach(function (e) { ids[e.id] = 1; });
+      Object.keys(S.done).forEach(function (key) { if (ids[key]) delete S.done[key]; });
+      Object.keys(S.steps).forEach(function (key) { if (ids[key]) delete S.steps[key]; });
+      Object.keys(S.ans).forEach(function (key) { if (ids[key.split(":")[0]]) delete S.ans[key]; });
+    }
+    persist(); build();
+    cur = nearest(fmt(new Date()));
+    flash = tname(ti) + " now begins " + longY(tstart(ti)) + "." + (clr ? " Checkmarks and answers for this term were cleared." : "");
+    draw(false);
+  }
   function termsView() {
-    var h = bar("Terms", "Tap a week to open it.");
+    var h = bar("Terms", "Tap a week to open it.") + scheduleCard();
     TERMS.forEach(function (t) {
       var weeks = {}, order = [];
       t.events.forEach(function (e) { var m = mondayOf(e.date); if (!weeks[m]) { weeks[m] = []; order.push(m); } weeks[m].push(e); });
@@ -323,6 +538,14 @@ h3.sec { font-family: var(--display); font-size: 24px; margin: 26px 0 0; }
       var n = S.ans[e.id + ":note"]; if (n && n.trim()) parts.push("Notes:\n" + n.trim());
       if (parts.length || S.done[e.id]) out.push("== " + e.date + " " + course(e) + (S.done[e.id] ? " (done)" : "") + "\n" + parts.join("\n\n"));
     });
+    var dks = {};
+    Object.keys(S.ans).forEach(function (k) { if (k.indexOf("J|") === 0) dks[k.split("|")[1]] = 1; });
+    Object.keys(S.links || {}).forEach(function (k) { dks[k] = 1; });
+    Object.keys(dks).sort().forEach(function (dk) {
+      var txt = (S.ans["J|" + dk + "|note"] || "").trim(), ls = (S.links && S.links[dk]) || [];
+      if (!txt && !ls.length) return;
+      out.push("== Journal " + dayLabel(dk) + (txt ? "\n" + txt : "") + (ls.length ? "\nLinks:\n" + ls.map(function (l) { return "- " + (l.t ? l.t + ": " : "") + l.u; }).join("\n") : ""));
+    });
     return out.join("\n\n") || "Nothing written yet.";
   }
   function notesView() {
@@ -330,7 +553,7 @@ h3.sec { font-family: var(--display); font-size: 24px; margin: 26px 0 0; }
     Object.keys(S.ans).forEach(function (k) { words += (S.ans[k] || "").trim().split(/\s+/).filter(Boolean).length; });
     var h = bar("Notes", "Your answers live on this device.");
     h += '<div class="card"><div class="lab" style="margin-top:0">Progress</div><p class="read">' + all[0] + " of " + all[1] + " sessions done. " + words + ' words written.</p><div class="meter"><i style="width:' + Math.round(100 * all[0] / all[1]) + '%"></i></div></div>';
-    h += '<div class="card"><div class="lab" style="margin-top:0">Back up your answers</div><p class="note">Browser storage can be cleared. Copy your work and paste it into Notes or Mail now and then.</p><div class="btns"><button class="btn" data-act="copy">Copy readable text</button><button class="btn ghost" data-act="copyjson">Copy restore code</button></div><textarea id="exp" readonly style="display:none;min-height:160px"></textarea></div>';
+    h += '<div class="card"><div class="lab" style="margin-top:0">Back up your answers</div><p class="note">Browser storage can be cleared. Copy your work and paste it into Notes or Mail now and then. Journal images stay on this device and are not in the copy.</p><div class="btns"><button class="btn" data-act="copy">Copy readable text</button><button class="btn ghost" data-act="copyjson">Copy restore code</button></div><textarea id="exp" readonly style="display:none;min-height:160px"></textarea></div>';
     h += '<div class="card"><div class="lab" style="margin-top:0">Restore</div><p class="note">Paste a restore code to bring your answers back.</p><textarea id="imp" placeholder="Paste restore code here"></textarea><div class="btns"><button class="btn ghost" data-act="import">Restore</button></div><p class="note" id="msg" role="status"></p></div>';
     h += '<p class="note">Syllabus data: ' + TERMS.length + " terms, " + ALL.length + " calendar entries.</p>";
     return h;
@@ -340,6 +563,7 @@ h3.sec { font-family: var(--display); font-size: 24px; margin: 26px 0 0; }
     drawTabs();
     app.innerHTML = '<div class="wrap">' + ({ today: todayView, week: weekView, terms: termsView, notes: notesView }[view])() + "</div>";
     autosize();
+    if (view === "today") loadImages();
     window.scrollTo(0, keepScroll ? y : 0);
   }
   function autosize() {
@@ -358,7 +582,27 @@ h3.sec { font-family: var(--display); font-size: 24px; margin: 26px 0 0; }
   document.addEventListener("click", function (ev) {
     var t = ev.target.closest("[data-tab],[data-go],[data-day],[data-done],[data-act]");
     if (!t) return;
-    if (t.dataset.tab) { view = t.dataset.tab; draw(false); return; }
+    if (t.dataset.tab) { view = t.dataset.tab; flash = ""; draw(false); return; }
+    if (t.dataset.act === "restart") {
+      var rti = +document.getElementById("rs-term").value, rds = document.getElementById("rs-date").value, clr = document.getElementById("rs-clear").checked;
+      if (!validDate(rds)) { document.getElementById("rs-prev").textContent = "Pick a start date first."; return; }
+      if (clr && !t.dataset.armed) { t.dataset.armed = "1"; t.textContent = "Tap again to clear and restart"; return; }
+      restartTerm(rti, rds, clr); return;
+    }
+    if (t.dataset.act === "reset") { S.off = []; persist(); build(); cur = nearest(fmt(new Date())); flash = "All terms are back on their original dates."; draw(false); return; }
+    var act = t.dataset.act;
+    if (act === "addlink") { addLink(t.dataset.dk); return; }
+    if (act === "viewimg") { openLightbox(t.dataset.id); return; }
+    if (act === "lbclose") { closeLightbox(); return; }
+    if (act === "rmlink" || act === "rmimg") {
+      if (!t.dataset.armed) {
+        t.dataset.armed = "1"; t.textContent = "Sure?";
+        setTimeout(function () { if (t.isConnected) { delete t.dataset.armed; t.textContent = "Remove"; } }, 4000);
+        return;
+      }
+      if (act === "rmlink") removeLink(t.dataset.dk, +t.dataset.i); else removeImage(t.dataset.id);
+      return;
+    }
     if (t.dataset.go) {
       var i = DATES.indexOf(cur);
       if (t.dataset.go === "today") cur = nearest(fmt(new Date())); else cur = DATES[Math.min(DATES.length - 1, Math.max(0, i + (+t.dataset.go)))];
@@ -372,7 +616,7 @@ h3.sec { font-family: var(--display); font-size: 24px; margin: 26px 0 0; }
       try {
         var o = JSON.parse(document.getElementById("imp").value);
         if (!o || typeof o !== "object" || !o.ans) throw 0;
-        S = { done: o.done || {}, steps: o.steps || {}, ans: o.ans || {} }; persist(); say("Restored.");
+        S = { done: o.done || {}, steps: o.steps || {}, ans: o.ans || {}, off: o.off || [], links: o.links || {} }; persist(); build(); say("Restored.");
       } catch (e) { say("That code did not work. Copy the whole restore code and try again."); }
     }
   });
@@ -382,12 +626,22 @@ h3.sec { font-family: var(--display); font-size: 24px; margin: 26px 0 0; }
   });
   document.addEventListener("change", function (ev) {
     var t = ev.target;
+    if (t.id === "img-pick") { handleFiles(t.files, t.dataset.dk); setTimeout(function () { try { t.value = ""; } catch (e) {} }, 0); return; }
+    if (t.id === "rs-term") { document.getElementById("rs-date").value = tstart(+t.value); updPrev(); return; }
+    if (t.id === "rs-date" || t.id === "rs-clear") { updPrev(); return; }
     if (t.dataset && t.dataset.step) {
       var p = t.dataset.step.split(":"), a = S.steps[p[0]] || [], i = +p[1], at = a.indexOf(i);
       if (t.checked && at < 0) a.push(i); if (!t.checked && at >= 0) a.splice(at, 1);
       S.steps[p[0]] = a; persist();
     }
   });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") closeLightbox();
+    var id = ev.target && ev.target.id;
+    if (ev.key === "Enter" && (id === "lk-url" || id === "lk-title")) { ev.preventDefault(); addLink(ev.target.dataset.dk); }
+  });
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+  openDB();
   draw(false);
 })();
 </script>
